@@ -1,0 +1,255 @@
+---
+title: "Processo Seletivo Seazone"
+author: "Alieksiei Marcelus Ramos Filho"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r, include=FALSE}
+
+#### Importando bibliotecas
+
+library(tidyverse) #núcleo da análise de dados com R
+library(lubridate) #para trabalhar com datas
+library(cowplot) #usado para montar o layout com multiplos gráficos na questão 3
+
+```
+
+
+
+```{r, include=FALSE}
+#### Importando os dados, já ajustando os tipos de variáveis e removendo repetições
+
+
+desafio_priceav <- read_csv("desafio_priceav.csv", 
+    col_types = cols(X1 = col_skip(),
+                     `Unnamed: 0` = col_skip(),
+                     booked_on = col_datetime(format = "%Y-%m-%d %H:%M:%S"), 
+                     date = col_date(format = "%Y-%m-%d"), 
+                     occupied = col_logical())) %>%
+  unique() #remover anúncios repetidos
+
+desafio_details <- read_csv("desafio_details.csv", 
+    col_types = cols(X1 = col_skip()))
+
+
+```
+
+
+```{r, include=FALSE}
+
+
+
+desafio_conjunto <- left_join(desafio_priceav, desafio_details) #Junção dos bancos de dados para as análises
+
+
+```
+
+
+Requerimento 1
+------------------------------------------------------------
+_Ordene os bairros em ordem crescente de número de listings_
+
+Considerando todos os anúncios, os bairros ficam ordenados como apresentado no gráfico a seguir: 
+
+```{r}
+#### Questão 1
+
+
+bairros_listings <- desafio_conjunto %>%
+  group_by(suburb) %>%
+  summarise(listings = n()) %>%
+  arrange(listings) #Agrupa por bairros e conta o número de anúncios
+
+
+
+ggplot(bairros_listings, aes(fct_inorder(suburb),y = listings, fill = suburb)) + geom_col() + geom_text(aes(y = listings/2, label = prettyNum(listings, big.mark = ".", decimal.mark = ","))) + labs(x = "Bairro", y = "Anúncios", title = "Quantidade de Anúncios por Bairro") + guides(fill = "none") + theme(plot.title = element_text(hjust = 0.5)) + scale_y_continuous(labels = scales::comma) 
+```
+
+O bairro dos Ingleses e o bairro de Canasvieiras representam a grande maioria dos anúncios, enquanto o Centro e a Lagoa da Conceição são pouco representativos. 
+
+
+\newpage
+
+Requerimento 2
+------------------------------------------------------------
+_Ordene os bairros em ordem crescente de faturamento médio dos listings_
+
+Para os cálculos de faturamento foram considerados apenas os anúncios onde o imóvel foi alugado.
+
+```{r}
+#### Questão 2
+
+
+
+listings_alugados <- desafio_conjunto %>%
+  filter(occupied == 1) #Filtra o dataset apenas pelas listings alugadas, também será usado para outras análises
+
+
+bairros_faturamento <- listings_alugados %>%
+  group_by(suburb) %>%
+  summarise(faturamento_medio = mean(price_string)) %>%
+  arrange(faturamento_medio) #Agrupa por bairro e calcula o faturamento médio por anúncio
+
+
+
+ggplot(bairros_faturamento, aes(x = fct_inorder(suburb), y = faturamento_medio, fill = suburb)) + geom_col() + geom_text(aes(y = faturamento_medio/2, label = paste0("R$", prettyNum(round(faturamento_medio, 2), big.mark = ".", decimal.mark = ",")))) + labs(x = "Bairro", y = "Faturamento Médio", title = "Faturamento Médio por Anúncio por Bairro") + guides(fill = "none") + theme(plot.title = element_text(hjust = 0.5)) + scale_y_continuous(labels = scales::comma)
+  
+```
+
+Ordenando os bairros por faturamento nota-se uma ordem bastante parecida com o gráfico anterior, de quantidade de *listings*, porém Jurerê salta do meio do *ranking* para o topo. 
+
+
+\newpage
+
+Requerimento 3
+------------------------------------------------------------
+
+_Existem correlações entre as características de um anúncio e seu faturamento? Quais? Explique_
+
+
+
+Sim, em uma análise preliminar observa-se uma forte correlação entre o número de quartos e banheiros e o faturamento, e um efeito mínimo das estrelas das avaliações. 
+
+Ressalva-se que `r round(100*nrow(subset(listings_alugados, star_rating==5))/nrow(listings_alugados), 2)`% dos anúncios tiveram uma avaliação de 5 estrelas e `r round(100*nrow(subset(listings_alugados, is.na(star_rating)))/nrow(listings_alugados), 2)`% não tinham avaliações e foram atribuídos um valor médio para o desenvolvimento da análise. Observa-se também uma pequena correlação negativa caso o anúncio possua muitos *reviews* ou venha de um *superhost*. 
+
+
+
+
+```{r}
+#### Questão 3
+
+alugados_completos <- drop_na(listings_alugados) #Usado para determinar os valores médios para substituir os nulos do banco de dados
+
+
+preparo_correlacao <- listings_alugados %>%
+  select(price_string, date, suburb, number_of_bedrooms, number_of_bathrooms, star_rating, is_superhost, number_of_reviews, airbnb_listing_id) %>% #Seleciona as colunas importantes e o listing id para evitar multiplicidade
+  mutate(k = 1) %>% #Auxiliar para o one-hot encoding com os bairros
+  pivot_wider(names_from = suburb, values_from = k)%>% #One-hot encoding para os bairros
+  mutate(star_rating = na_if(star_rating, 0)) %>% #Rating 0 aconteceu apenas quando não há reviews, visto que a escala é de 1 a 5, será substituído por um valor médio
+  mutate(date = wday(date))%>%
+  replace_na(list(number_of_bedrooms = median(alugados_completos$number_of_bedrooms), number_of_bathrooms = median(alugados_completos$number_of_bathrooms), star_rating = mean(alugados_completos$star_rating)))%>% #Quartos e banheiros substituídos pela mediana, rating pela média
+  select(-airbnb_listing_id) #Remove o identificador que já não é mais necessário
+             
+
+preparo_correlacao[is.na(preparo_correlacao)] = 0 #Preenche o valor nulo do número de reviews e das colunas de bairro, completando o one-hot encoding
+
+
+tabela_correlacao <- as.data.frame(cor(preparo_correlacao))[1] #Monta uma matriz de correlação e seleciona a primeira coluna, referente ao preço
+
+tabela_correlacao["variavel"] <- rownames(tabela_correlacao) #Ajuste para montar o gráfico
+
+
+ggplot(slice(tabela_correlacao, 2:7), aes(x = fct_inorder(variavel), y = price_string)) + geom_col() + geom_text(aes(y = price_string/2, label = prettyNum(round(price_string, 2), big.mark = ".", decimal.mark = ",")), color = "white") + labs(x = "Variável", y = "Coeficiente de Correlação", title = "Impacto das Características no Faturamento") + theme(plot.title = element_text(hjust = 0.5)) + scale_x_discrete(labels = c("Dia da Semana", "Quartos", "Banheiros", "Avaliações(Estrelas)", "Superhost", "Avaliações(Quantidade)")) 
+
+
+
+
+```
+Para a data usou-se apenas o dia da semana e a correlação foi desprezível. Os anúncios estão bem distribuídos ao longo da semana, como visto na tabela a seguir.
+
+
+
+```{r}
+
+knitr::kable(listings_alugados %>%
+               mutate(`Dia da Semana` = wday(date, label = TRUE)) %>%
+               group_by(`Dia da Semana`) %>% 
+               summarise(Anúncios = n()))
+
+```
+
+
+\newpage
+
+Os bairros devem ser observados individualmente - Tanto seu fator de correlação quanto a distribuição do faturamento dos anúncios. 
+
+
+```{r}
+
+
+correlacao_bairros <- ggplot(slice(tabela_correlacao, 8:12), aes(x = variavel, y = price_string, fill = variavel)) + geom_col() + geom_text(aes(y = price_string/2, label = prettyNum(round(price_string, 2), big.mark = ".", decimal.mark = ","))) + labs(x = "Bairro", y = "Coeficiente de Correlação", title = "Impacto do Bairro no Faturamento") + theme(plot.title = element_text(hjust = 0.5)) + guides(fill = "none")
+
+
+boxplot_bairros <- ggplot(listings_alugados, aes(x = suburb, y = price_string))+geom_boxplot() + labs(x = "Bairro", y = "Faturamento do Anúncio(R$)", title = "Distribuição do Faturamento por Bairro") + theme(plot.title = element_text(hjust = 0.5))
+
+
+plot_grid(correlacao_bairros, boxplot_bairros, nrow = 2)
+
+```
+
+Comparando estes com o segundo gráfico, os bairros de maior faturamento possuem um fator de correlação positivo e vice-versa. Nota-se que o alto valor de Jurerê vem da de uma grande densidade de _listings_ mais caras, e possui poucos _outliers_. 
+
+
+
+\newpage
+
+Também convém observar as distribuições do faturamento por número de quartos e de banheiros:
+
+
+```{r, message = FALSE, warning = FALSE}
+plt_quartos_box <- ggplot(listings_alugados, aes(x = as.factor(number_of_bedrooms), y = price_string))+geom_boxplot() + labs(x = "Número de Quartos", y = "Faturamento do Anúncio(R$)")
+
+plt_quartos_hist <- ggplot(listings_alugados, aes(x = number_of_bedrooms))+geom_histogram()+ labs(x = "", y = "Quantidade de Anúncios")
+
+plt_banheiros_box <- ggplot(listings_alugados, aes(x = as.factor(number_of_bathrooms), y = price_string))+geom_boxplot() + labs(x = "Número de Banheiros", y = "Faturamento do Anúncio(R$)")
+
+plt_banheiros_hist <- ggplot(listings_alugados, aes(x = number_of_bathrooms))+geom_histogram()+ labs(x = "", y = "Quantidade de Anúncios")
+
+plot_grid(plt_quartos_box, plt_banheiros_box, plt_quartos_hist, plt_banheiros_hist, align = "h") #Layout de multiplos gráficos(usa a biblioteca Cowplot)
+```
+
+Como esperado, o preço da _listing_ cresce com a quantidade de quartos e banheiros. 
+
+Requerimento 4
+------------------------------------------------------------
+
+_Qual a antecedência média das reservas? Esse número é maior ou menor para finais de semana?_
+
+
+
+```{r}
+#### Questão 4
+
+
+antecedencia_reservas <- select(listings_alugados, airbnb_listing_id, booked_on, date) %>%
+  mutate(antecedencia = int_length(interval(start = booked_on, end = date))/86400, dia_semana = wday(date))%>% #A duração do intervalo é dada em segundos, divide-se por 86400 para ter a diferença em dias
+  filter(antecedencia <= 500) #Algumas listings tinham uma antecedencia de mais de 20 anos e foram retiradas, sendo erros do dataset. 
+
+antecedencia_reservas$fim_de_semana <- antecedencia_reservas$dia_semana>5 #Máscara para determinar se é dia de semana ou não
+
+
+reservas <- antecedencia_reservas %>%
+  filter(antecedencia > 0) #Segundo dataset para analisar a antecedência apenas das reservas com antecedência(não no mesmo dia)
+
+
+#As variáveis a seguir são usadas inline no texto
+
+ant_normal <- round(mean(antecedencia_reservas$antecedencia), 2)
+ant_fim_de_semana <- round(mean((antecedencia_reservas%>%filter(fim_de_semana==TRUE))$antecedencia), 2)
+ant_dia_de_semana <- round(mean((antecedencia_reservas%>%filter(fim_de_semana==FALSE))$antecedencia), 2)
+
+res_normal <- round(mean(reservas$antecedencia), 2)
+res_fim_de_semana <- round(mean((reservas%>%filter(fim_de_semana==TRUE))$antecedencia), 2)
+res_dia_de_semana <- round(mean((reservas%>%filter(fim_de_semana==FALSE))$antecedencia), 2) 
+
+
+
+```
+
+As médias são apresentadas na tabela a seguir, no primeiro caso são contabilizadas as reservas "espontâneas", para o mesmo dia, e no outro apenas as reservas com ao menos um dia de antecedência. As reservas espontâneas representam `r 100*round((1-(nrow(reservas)/nrow(antecedencia_reservas))), 2)`% do total!
+
+
+Dias Contados |C/ Espontaneas  | S/ Espontaneas
+--------------|--------------- | -------------
+Todos         |`r ant_normal`  | `r res_normal`
+Fim de Semana |`r ant_fim_de_semana`  | `r res_fim_de_semana`
+Dia de Semana |`r ant_dia_de_semana`  | `r res_dia_de_semana`
+
+Nos dois casos os fins de semana têm uma antecedência média menor que os dias de semana. 
