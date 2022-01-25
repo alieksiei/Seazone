@@ -253,3 +253,11 @@ Fim de Semana |`r ant_fim_de_semana`  | `r res_fim_de_semana`
 Dia de Semana |`r ant_dia_de_semana`  | `r res_dia_de_semana`
 
 Nos dois casos os fins de semana têm uma antecedência média menor que os dias de semana. 
+
+\newpage
+
+
+Feedback
+------------------------------------
+
+O desafio foi divertido. Particularmente eu gosto deste tipo de projeto 'mão na massa', costuma ser um modelo de avaliação mais preciso que uma prova.Fora isso, comparado aos outros o item 3 foi bem aberto, fiquei incerto sobre quão "profunda" devia ser a resposta. 
